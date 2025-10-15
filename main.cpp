@@ -69,6 +69,8 @@ struct Repository
             std::cout << "Reinitialized MyGit in " << fs::absolute(path) << "\n";
             return false;
         }
+
+        // create directory structure 
         fs::create_directories(path + "/objects");
         fs::create_directories(path + "/refs/heads");
         fs::create_directories(path + "/refs/tags");
@@ -88,20 +90,28 @@ struct Repository
     // ----- CONFIG MANAGEMENT -----
     std::map<std::string, std::string> readConfig()
     {
+        // Create a map to store key-value pairs (like "name" -> "Alice", "email" -> "alice@example.com")
         std::map<std::string, std::string> cfg;
+
+        // Open the config file from the .mygit directory
         std::ifstream f(path + "/config");
         if (!f.is_open())
             return cfg;
 
         std::string line;
+        // Read the config file line by line
         while (std::getline(f, line))
         {
+            // If the line contains "name", extract the substring after '=' and store it as the author name
             if (line.find("name") != std::string::npos)
                 cfg["name"] = line.substr(line.find("=") + 1);
+
+            // If the line contains "email", extract the substring after '=' and store it as the author email
             else if (line.find("email") != std::string::npos)
                 cfg["email"] = line.substr(line.find("=") + 1);
         }
-        // trim whitespace
+
+        // --- Trim leading whitespace from each value (e.g., " Alice" → "Alice") ---
         for (auto &p : cfg)
         {
             if (!p.second.empty() && p.second.front() == ' ')
@@ -130,6 +140,7 @@ struct Repository
             std::cerr << "Not a MyGit repository.\n";
             return;
         }
+
         auto cfgmap = readConfig();
         cfgmap["name"] = name;
         writeConfig(cfgmap["name"], cfgmap["email"]);
@@ -143,6 +154,7 @@ struct Repository
             std::cerr << "Not a MyGit repository.\n";
             return;
         }
+
         auto cfgmap = readConfig();
         cfgmap["email"] = email;
         writeConfig(cfgmap["name"], cfgmap["email"]);
@@ -165,23 +177,31 @@ struct Repository
         }
 
         // Read file content
-        std::ifstream file(filePath, std::ios::binary);
+        std::ifstream file(filePath, std::ios::binary); // Open the file in binary mode
         std::ostringstream buffer;
-        buffer << file.rdbuf();
+        buffer << file.rdbuf(); // Stream file contents into an in-memory buffer
         file.close();
         std::string content = buffer.str();
 
         // Compute hash
+        // The hash uniquely identifies a file by its content.
         std::string hash = sha1(content);
+
+        // Use the first two characters of the hash as a subdirectory
+        // (to distribute objects into multiple folders — just like Git does).
         std::string dir = path + "/objects/" + hash.substr(0, 2);
         std::string fileName = hash.substr(2);
 
+        // store the blob object
         fs::create_directories(dir);
+
+        // Save the raw file content into the object store under ".mygit/objects/"
         std::ofstream blobFile(dir + "/" + fileName, std::ios::binary);
         blobFile << content;
         blobFile.close();
 
-        // record in index file
+        // Record the blob in the index
+        // Append a new entry to ".mygit/index" that maps the filename to its content hash.
         std::ofstream indexFile(path + "/index", std::ios::app);
         indexFile << filePath << " " << hash << "\n";
         indexFile.close();
