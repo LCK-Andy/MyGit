@@ -4,11 +4,12 @@ When I was watching a YouTube about job interview. I saw the sample CV of a cand
 
 ## Features
 
-- git init
-- git add
-- git commit
-- git log
-- git help
+- Basic git commands implemented:
+  - `git init`
+  - `git add`
+  - `git commit`
+  - `git log`
+  - `git diff`
 
 ## Roadmap
 
