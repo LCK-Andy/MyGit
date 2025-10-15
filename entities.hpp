@@ -43,3 +43,14 @@ struct Branch{
     std::string name;
     std::string commitHash;
 };
+
+struct HEAD{
+    bool isDetached;
+    std::string refName; // branch name OR commit hash
+};
+
+struct Repository{
+    std::string path = ".mygit";
+    std::vector<Commit> commits;
+    std::vector<Branch> branches;
+};
