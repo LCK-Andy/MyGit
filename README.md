@@ -12,9 +12,9 @@ When I was watching a YouTube about job interview. I saw the sample CV of a cand
 
 ## Roadmap
 
-- [] git status
-- [] git checkout
-- [] git branch
-- [] git restore --staged
-- [] git merge
-- [] git reset
+- [x] git status
+- [ ] git checkout
+- [ ] git branch
+- [ ] git restore --staged
+- [ ] git merge
+- [ ] git reset

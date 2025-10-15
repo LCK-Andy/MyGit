@@ -70,7 +70,7 @@ struct Repository
             return false;
         }
 
-        // create directory structure 
+        // create directory structure
         fs::create_directories(path + "/objects");
         fs::create_directories(path + "/refs/heads");
         fs::create_directories(path + "/refs/tags");
@@ -371,6 +371,148 @@ struct Repository
             commitHash = parentHash;
         }
     }
+
+    void status()
+    {
+        if (!isInitialized())
+        {
+            std::cerr << "Error: not a MyGit repository.\n";
+            return;
+        }
+
+        // --- Read current branch name from HEAD ---
+        std::ifstream headFile(path + "/HEAD");
+        std::string headRef;
+        std::getline(headFile, headRef);
+        headFile.close();
+
+        std::string branch = "main";
+        if (headRef.find("ref:") != std::string::npos)
+            branch = headRef.substr(headRef.find_last_of('/') + 1);
+
+        std::cout << "On branch " << branch << "\n\n";
+
+        // --- Read index (staging area) ---
+        std::map<std::string, std::string> indexEntries;
+        std::ifstream indexFile(path + "/index");
+        if (indexFile.is_open())
+        {
+            std::string filePath, fileHash;
+            while (indexFile >> filePath >> fileHash)
+                indexEntries[filePath] = fileHash;
+            indexFile.close();
+        }
+
+        // --- Read last commit’s tracked files (if any) ---
+        std::map<std::string, std::string> committedFiles;
+        std::string branchRef = path + "/refs/heads/" + branch;
+        if (fs::exists(branchRef))
+        {
+            std::ifstream refFile(branchRef);
+            std::string commitHash;
+            refFile >> commitHash;
+            refFile.close();
+
+            // Load commit from objects
+            std::string commitDir = path + "/objects/" + commitHash.substr(0, 2);
+            std::string commitFile = commitHash.substr(2);
+            std::ifstream commitObj(commitDir + "/" + commitFile, std::ios::binary);
+            if (commitObj.is_open())
+            {
+                std::string line, treeHash;
+                while (std::getline(commitObj, line))
+                {
+                    if (line.rfind("tree ", 0) == 0)
+                    {
+                        treeHash = line.substr(5);
+                        break;
+                    }
+                }
+                commitObj.close();
+
+                // Read tree object to get committed files
+                if (!treeHash.empty())
+                {
+                    std::string treeDir = path + "/objects/" + treeHash.substr(0, 2);
+                    std::string treeName = treeHash.substr(2);
+                    std::ifstream treeObj(treeDir + "/" + treeName, std::ios::binary);
+                    std::string entry;
+                    while (std::getline(treeObj, entry))
+                    {
+                        std::istringstream iss(entry);
+                        std::string mode, name, hash;
+                        iss >> mode >> name >> hash;
+                        if (!name.empty() && !hash.empty())
+                            committedFiles[name] = hash;
+                    }
+                    treeObj.close();
+                }
+            }
+        }
+
+        // --- Collect file states ---
+        std::vector<std::string> staged;
+        std::vector<std::string> modified;
+        std::vector<std::string> untracked;
+
+        // Check staged files
+        for (auto &[filename, hash] : indexEntries)
+            staged.push_back(filename);
+
+        // Walk working directory (skip .mygit)
+        for (auto &entry : fs::directory_iterator(fs::current_path()))
+        {
+            if (entry.path().filename() == ".mygit")
+                continue;
+            if (entry.is_directory())
+                continue;
+
+            std::string fname = entry.path().filename();
+            std::ifstream f(fname, std::ios::binary);
+            std::ostringstream buf;
+            buf << f.rdbuf();
+            std::string content = buf.str();
+            f.close();
+
+            std::string h = sha1(content);
+
+            bool inIndex = indexEntries.count(fname);
+            bool inCommit = committedFiles.count(fname);
+
+            if (inCommit && h != committedFiles[fname])
+                modified.push_back(fname);
+            else if (!inIndex && !inCommit)
+                untracked.push_back(fname);
+        }
+
+        // --- Print results ---
+        if (!staged.empty())
+        {
+            std::cout << "Staged files:\n";
+            for (auto &f : staged)
+                std::cout << "    " << f << "\n";
+            std::cout << "\n";
+        }
+
+        if (!modified.empty())
+        {
+            std::cout << "Modified (not staged):\n";
+            for (auto &f : modified)
+                std::cout << "    " << f << "\n";
+            std::cout << "\n";
+        }
+
+        if (!untracked.empty())
+        {
+            std::cout << "Untracked files:\n";
+            for (auto &f : untracked)
+                std::cout << "    " << f << "\n";
+            std::cout << "\n";
+        }
+
+        if (staged.empty() && modified.empty() && untracked.empty())
+            std::cout << "Nothing to commit, working tree clean\n";
+    }
 };
 
 // --- Main Command Parser (CLI entry point) ---
@@ -429,26 +571,31 @@ int main(int argc, char *argv[])
         }
         repo.setAuthorEmail(argv[2]);
     }
+    else if (cmd == "status")
+    {
+        repo.status();
+    }
     else if (cmd == "help")
     {
         std::cout << "MyGit - a minimal Git-like version control system\n\n"
-                     "Usage:\n"
-                     "  mygit <command> [arguments]\n\n"
-                     "Commands:\n"
-                     "  init                    Initialize a new repository (.mygit directory)\n"
-                     "  add <file>              Add file contents to the staging area\n"
-                     "  commit <message>        Record staged changes as a new commit\n"
-                     "  log                     Display commit history\n"
-                     "  set_author <name>       Set the author's name\n"
-                     "  set_email <email>       Set the author's email address\n"
-                     "  help                    Show this help message\n\n"
-                     "Examples:\n"
-                     "  ./mygit init\n"
-                     "  ./mygit set_author \"John Doe\"\n"
-                     "  ./mygit set_email john@example.com\n"
-                     "  ./mygit add main.cpp\n"
-                     "  ./mygit commit \"Initial commit\"\n"
-                     "  ./mygit log\n";
+                 "Usage:\n"
+                 "  mygit <command> [arguments]\n\n"
+                 "Commands:\n"
+                 "  init                    Initialize a new repository (.mygit directory)\n"
+                 "  add <file>              Add file contents to the staging area\n"
+                 "  commit <message>        Record staged changes as a new commit\n"
+                 "  log                     Display commit history\n"
+                 "  set_author <name>       Set the author's name\n"
+                 "  set_email <email>       Set the author's email address\n"
+                 "  status                  Show the working tree status\n"
+                 "  help                    Show this help message\n\n"
+                 "Examples:\n"
+                 "  ./mygit init\n"
+                 "  ./mygit set_author \"John Doe\"\n"
+                 "  ./mygit set_email john@example.com\n"
+                 "  ./mygit add main.cpp\n"
+                 "  ./mygit commit \"Initial commit\"\n"
+                 "  ./mygit log\n";
     }
     else
     {
